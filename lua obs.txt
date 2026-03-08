@@ -1,0 +1,66 @@
+-- script_update_date.lua
+-- Atualiza automaticamente a fonte de texto "DATA" com a data no formato "DD MMM"
+-- exatamente à meia-noite
+
+obs = obslua
+
+local SOURCE_NAME = "DATA"   -- nome da fonte de texto
+
+-- ===== Util =====
+local function get_month_abbreviation(i)
+    local months = { "JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ" }
+    return months[i]
+end
+
+local function formatted_today()
+    local t = os.date("*t", os.time())
+    return string.format("%d %s", t.day, get_month_abbreviation(t.month))
+end
+
+local function set_text_on_source(source, text)
+    if not source then return end
+    local settings = obs.obs_data_create()
+    obs.obs_data_set_string(settings, "text", text)
+    obs.obs_source_update(source, settings)
+    obs.obs_data_release(settings)
+end
+
+local function update_now()
+    local src = obs.obs_get_source_by_name(SOURCE_NAME)
+    if src ~= nil then
+        set_text_on_source(src, formatted_today())
+        obs.obs_source_release(src)
+    end
+end
+
+-- ===== Cálculo para meia-noite =====
+local function ms_until_midnight()
+    local t = os.date("*t")
+    local seconds_today = t.hour * 3600 + t.min * 60 + t.sec
+    local seconds_until_midnight = 24*3600 - seconds_today
+    return seconds_until_midnight * 1000
+end
+
+-- ===== OBS Hooks =====
+function script_description()
+    return "Mantém a fonte de texto \"" .. SOURCE_NAME .. "\" atualizada com a data no formato DD MMM, atualizando apenas à meia-noite."
+end
+
+function script_load(settings)
+    -- Atualiza imediatamente ao carregar
+    update_now()
+
+    -- Agenda para a próxima meia-noite
+    local first = ms_until_midnight()
+    obs.timer_add(function()
+        update_now()
+        -- remove esse timer único
+        obs.timer_remove(update_now)
+        -- agenda de 24h em 24h depois da primeira atualização
+        obs.timer_add(update_now, 24 * 60 * 60 * 1000)
+    end, first)
+end
+
+function script_unload()
+    obs.timer_remove(update_now)
+end
